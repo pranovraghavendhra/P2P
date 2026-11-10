@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>How It Works — TCP File Transfer</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<!-- ── Navigation ──────────────────────────────────────────────────────── -->
+<nav>
+  <div class="nav-inner">
+    <span class="nav-logo">&#9654; TCP File Transfer</span>
+    <ul class="nav-links">
+      <li><a href="/">Transfer</a></li>
+      <li><a href="/how-it-works" class="active">How It Works</a></li>
+    </ul>
+  </div>
+</nav>
+
+<div class="hiw-main">
+
+  <!-- Hero -->
+  <div class="hiw-hero">
+    <h1>How It Works</h1>
+    <p>A plain-English explanation of the TCP socket programming concepts used in this project — written for an ECE college student.</p>
+  </div>
+
+  <!-- 1. What is TCP? -->
+  <div class="hiw-card">
+    <h2>1. What is TCP?</h2>
+    <p>
+      <strong>TCP (Transmission Control Protocol)</strong> is one of the main protocols of the Internet.
+      It provides a <em>reliable, ordered, error-checked</em> channel between two computers.
+    </p>
+    <ul>
+      <li><strong>Reliable</strong> – if a packet is lost, TCP automatically retransmits it.</li>
+      <li><strong>Ordered</strong> – data arrives in the same order it was sent.</li>
+      <li><strong>Connection-oriented</strong> – a connection must be established before data can flow (the famous <em>three-way handshake</em>: SYN → SYN-ACK → ACK).</li>
+    </ul>
+    <p>
+      Because TCP guarantees delivery and order, it is ideal for file transfer.
+      If even one byte of a file is lost, the received file would be corrupted — TCP prevents this.
+    </p>
+  </div>
+
+  <!-- 2. What is socket programming? -->
+  <div class="hiw-card">
+    <h2>2. What is Socket Programming?</h2>
+    <p>
+      A <strong>socket</strong> is a software endpoint that programs use to send and receive data over a network.
+      Think of a socket as the plug-and-socket pair at each end of a telephone cable.
+    </p>
+    <p>
+      In Python we use the built-in <code>socket</code> library:
+    </p>
+    <ul>
+      <li><code>socket.socket(AF_INET, SOCK_STREAM)</code> — creates a TCP socket.</li>
+      <li><code>sock.connect((ip, port))</code> — sender connects to the receiver.</li>
+      <li><code>sock.bind((host, port))</code> + <code>sock.listen()</code> — receiver listens for connections.</li>
+      <li><code>sock.sendall(data)</code> — sends bytes reliably.</li>
+      <li><code>sock.recv(n)</code> — reads <em>up to</em> n bytes (may return fewer — see chunk reading below).</li>
+    </ul>
+  </div>
+
+  <!-- 3. Why TCP for file transfer? -->
+  <div class="hiw-card">
+    <h2>3. Why Use TCP for File Transfer?</h2>
+    <p>
+      Alternative protocols like <strong>UDP</strong> are faster but do not guarantee delivery.
+      A single lost UDP packet would produce a corrupted file with no automatic recovery.
+    </p>
+    <p>
+      TCP's built-in reliability means we can focus on the application logic
+      (metadata, acknowledgements, checksum verification) instead of writing our own
+      retransmission logic.
+    </p>
+  </div>
+
+  <!-- 4. Communication flow -->
+  <div class="hiw-card">
+    <h2>4. File Transfer Communication Flow</h2>
+    <p>This is the exact sequence implemented in <code>tcp_sender.py</code> and <code>tcp_receiver.py</code>:</p>
+
+    <div class="flow-strip">
+      <span class="flow-step">TCP Connect</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">File Metadata</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">Receiver ACK</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">File Chunks</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">File Reconstruction</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">Final ACK</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">Transfer Complete</span>
+    </div>
+
+    <ol>
+      <li><strong>TCP Connection</strong> — The sender calls <code>sock.connect(receiver_ip, receiver_port)</code>. The OS performs the three-way handshake automatically.</li>
+      <li><strong>File Metadata</strong> — The sender transmits a small JSON message containing the filename, file size, and SHA-256 checksum. This is sent as a <em>framed message</em> (see §6).</li>
+      <li><strong>Receiver ACK</strong> — The receiver validates the filename (no path traversal, no illegal characters) and checks for duplicate filenames. If everything is fine, it sends back <code>ACK</code>; otherwise it sends <code>REJECT</code>.</li>
+      <li><strong>File Chunks</strong> — The sender reads the file in 4096-byte blocks and calls <code>sock.sendall(chunk)</code> for each block.</li>
+      <li><strong>File Reconstruction</strong> — The receiver appends each chunk to a new file on disk, counting the bytes received.</li>
+      <li><strong>Verification</strong> — When all bytes are received, the receiver checks (a) the total byte count matches the declared file size, and (b) the SHA-256 checksum matches the one sent in the metadata.</li>
+      <li><strong>Final ACK</strong> — The receiver sends <code>SUCCESS</code> or <code>FAILURE</code>. The sender displays the result to the user.</li>
+    </ol>
+  </div>
+
+  <!-- 5. Message framing -->
+  <div class="hiw-card">
+    <h2>5. Message Framing — Why It Matters</h2>
+    <p>
+      TCP is a <em>stream protocol</em>. When you send 100 bytes, the receiver's
+      <code>recv()</code> call might return 40 bytes the first time and 60 bytes the next —
+      or all 100 at once. There is <strong>no concept of message boundaries</strong> in TCP by default.
+    </p>
+    <p>
+      To fix this, we use <strong>length-prefixed framing</strong> (implemented in <code>protocol.py</code>):
+    </p>
+    <ul>
+      <li>Before every control message (metadata, ACK, SUCCESS…) we prepend a <strong>4-byte big-endian integer</strong> that holds the message length.</li>
+      <li>The receiver first reads exactly 4 bytes to learn the length, then reads exactly that many bytes.</li>
+      <li>File data chunks are handled differently: we know the total file size from the metadata, so we keep reading <code>min(CHUNK_SIZE, remaining)</code> bytes until all bytes arrive.</li>
+    </ul>
+    <p>
+      The helper function <code>recv_exact(sock, n)</code> in <code>protocol.py</code> loops on
+      <code>sock.recv()</code> until exactly <code>n</code> bytes have been accumulated — correctly
+      handling partial reads.
+    </p>
+  </div>
+
+  <!-- 6. Checksum -->
+  <div class="hiw-card">
+    <h2>6. SHA-256 Checksum — File Integrity Verification</h2>
+    <p>
+      A <strong>checksum</strong> is a short fixed-length value derived from a file.
+      If even one bit of the file changes, the checksum changes completely.
+    </p>
+    <p>
+      We use <strong>SHA-256</strong> (from Python's <code>hashlib</code> library):
+    </p>
+    <ul>
+      <li>The sender computes the SHA-256 hash of the file before sending and includes it in the metadata.</li>
+      <li>The receiver computes the SHA-256 hash of the data as it arrives, byte by byte.</li>
+      <li>After all chunks are written, the two hashes are compared. A mismatch means the file was corrupted in transit — the receiver deletes the file and sends <code>FAILURE</code>.</li>
+    </ul>
+  </div>
+
+  <!-- 7. Architecture -->
+  <div class="hiw-card">
+    <h2>7. System Architecture</h2>
+    <p>This project has a three-layer architecture:</p>
+    <ul>
+      <li><strong>Browser (HTML + JS)</strong> — the user interface. Sends files to the backend using HTTP multipart upload and polls the backend for receiver events.</li>
+      <li><strong>FastAPI backend (main.py)</strong> — acts as a bridge. It accepts the browser's HTTP requests and calls the TCP sender/receiver code.</li>
+      <li><strong>TCP layer (tcp_sender.py, tcp_receiver.py, protocol.py)</strong> — does the actual network file transfer between two computers using raw TCP sockets.</li>
+    </ul>
+    <p>
+      The reason we need a backend is that browsers cannot open raw TCP sockets for security reasons.
+      The FastAPI server runs on the same machine and acts as the TCP client/server on behalf of the browser.
+    </p>
+  </div>
+
+  <!-- 8. File safety -->
+  <div class="hiw-card">
+    <h2>8. File Safety and Security</h2>
+    <ul>
+      <li><strong>Filename validation</strong> — The receiver rejects filenames containing path separators (<code>/</code>, <code>\</code>, <code>..</code>) or unusual characters to prevent <em>path traversal attacks</em>.</li>
+      <li><strong>No overwriting</strong> — If a file named <code>report.pdf</code> already exists, the receiver saves the new file as <code>report_1.pdf</code>, then <code>report_2.pdf</code>, and so on.</li>
+      <li><strong>Incomplete file cleanup</strong> — If the connection drops mid-transfer, the incomplete file is deleted automatically.</li>
+    </ul>
+  </div>
+
+  <!-- 9. Viva Q&A -->
+  <div class="hiw-card">
+    <h2>9. Viva Questions &amp; Answers</h2>
+
+    <div class="qa-item">
+      <div class="qa-q">Q1. What is the difference between TCP and UDP?</div>
+      <div class="qa-a">TCP is connection-oriented and guarantees reliable, ordered delivery. UDP is connectionless and faster but offers no delivery guarantee. We use TCP for file transfer because we cannot afford to lose any bytes of the file.</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q">Q2. What is a socket?</div>
+      <div class="qa-a">A socket is a software interface that allows a program to send and receive data over a network. It is identified by an IP address and a port number. In Python, the <code>socket.socket()</code> call creates one.</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q">Q3. What is the three-way handshake?</div>
+      <div class="qa-a">It is how TCP establishes a connection. The client sends SYN, the server replies with SYN-ACK, and the client sends ACK. After this, data can flow in both directions.</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q">Q4. Why do we read the file in chunks instead of all at once?</div>
+      <div class="qa-a">Large files may not fit in RAM. Reading in 4096-byte chunks keeps memory usage constant regardless of file size. TCP can also only handle limited amounts of data in a single send, so chunking aligns with how the protocol naturally works.</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q">Q5. Why can one <code>recv()</code> call return fewer bytes than requested?</div>
+      <div class="qa-a">TCP is a stream protocol. The OS may split data across multiple TCP segments. A <code>recv()</code> call returns whatever bytes are currently in the OS buffer, which may be less than the requested amount. Our <code>recv_exact()</code> function loops until the full amount arrives.</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q">Q6. What is message framing and why do we need it?</div>
+      <div class="qa-a">Since TCP has no message boundaries, we prepend each control message with a 4-byte length header. The receiver reads the length first, then reads exactly that many bytes. This is called length-prefix framing.</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q">Q7. What is a SHA-256 checksum and why do we use it?</div>
+      <div class="qa-a">SHA-256 is a hash function that produces a 64-character hexadecimal string from any input. Even a single bit change in the file produces a completely different hash. We compare the sender's hash with the receiver's computed hash to verify that the file arrived uncorrupted.</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q">Q8. What is an ACK?</div>
+      <div class="qa-a">ACK stands for Acknowledgement. In our protocol, after receiving the metadata the receiver sends back a simple "ACK" byte string to tell the sender it is ready to receive the file. If the metadata is invalid, it sends "REJECT" instead.</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q">Q9. What happens if the connection drops midway through a transfer?</div>
+      <div class="qa-a">The <code>recv_exact()</code> function raises a <code>ConnectionError</code> because it tries to read bytes that never arrive. The receiver catches this, deletes the incomplete file, and reports a failure. The sender also catches the exception and displays an error to the user.</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q">Q10. What is a port number?</div>
+      <div class="qa-a">A port number (0–65535) identifies a specific application or service on a computer. The IP address gets the data to the right machine; the port gets it to the right application. In this project, both sides agree to use port 9001 by default.</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q">Q11. Why does the browser upload the file to its own backend before TCP transfer?</div>
+      <div class="qa-a">Web browsers cannot open raw TCP sockets (for security reasons). So the browser uploads the file to its local FastAPI server using HTTP. The FastAPI server then opens the real TCP connection and transmits the file to the remote receiver.</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q">Q12. How does the receiver prevent overwriting existing files?</div>
+      <div class="qa-a">Before saving, the receiver checks whether a file with the same name already exists in the destination folder. If it does, it appends <code>_1</code>, <code>_2</code>, etc., to the filename until it finds a name that does not exist.</div>
+    </div>
+
+  </div>
+
+</div><!-- /.hiw-main -->
+
+</body>
+</html>

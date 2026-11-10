@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>TCP File Transfer</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<!-- ── Navigation ──────────────────────────────────────────────────────── -->
+<nav>
+  <div class="nav-inner">
+    <span class="nav-logo">&#9654; TCP File Transfer</span>
+    <ul class="nav-links">
+      <li><a href="/" class="active">Transfer</a></li>
+      <li><a href="/how-it-works">How It Works</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- ── Main layout ─────────────────────────────────────────────────────── -->
+<main>
+
+  <!-- ════════════════════════════════════════════════════
+       SEND A FILE
+  ═════════════════════════════════════════════════════ -->
+  <section class="card" id="send-section">
+    <h2 class="section-title">
+      <span class="icon">&#8599;</span> Send a File
+    </h2>
+
+    <!-- File picker -->
+    <div class="field-group">
+      <label class="field-label" for="file-input">Select File</label>
+      <div class="file-drop-area" id="file-drop-area">
+        <input type="file" id="file-input" class="file-input" />
+        <div class="file-drop-label" id="file-drop-label">
+          <span class="drop-icon">&#128194;</span>
+          <span>Click to choose a file</span>
+          <span class="drop-sub">or drag and drop here</span>
+        </div>
+      </div>
+      <!-- File details (shown after selection) -->
+      <div class="file-details" id="file-details" style="display:none">
+        <span class="detail-icon">&#128196;</span>
+        <div>
+          <div class="detail-name" id="detail-name"></div>
+          <div class="detail-size" id="detail-size"></div>
+        </div>
+        <button class="btn-clear" id="btn-clear-file" title="Clear">&#10005;</button>
+      </div>
+    </div>
+
+    <!-- Receiver IP -->
+    <div class="field-group">
+      <label class="field-label" for="recv-ip">Receiver IP Address</label>
+      <input type="text" id="recv-ip" class="text-input" placeholder="e.g. 192.168.1.5" />
+      <span class="field-hint">Enter the IP address of the other computer on your network.</span>
+    </div>
+
+    <!-- Port -->
+    <div class="field-group">
+      <label class="field-label" for="recv-port">Receiver Port</label>
+      <input type="number" id="recv-port" class="text-input" value="9001" min="1024" max="65535" />
+      <span class="field-hint">Must match the port the receiver is listening on.</span>
+    </div>
+
+    <!-- Send button -->
+    <button class="btn-primary" id="btn-send">Send File</button>
+
+    <!-- Progress -->
+    <div class="progress-wrap" id="send-progress-wrap" style="display:none">
+      <div class="progress-label">
+        <span id="send-progress-text">Connecting…</span>
+        <span id="send-progress-pct">0%</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="send-progress-fill" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- Status message -->
+    <div class="status-msg" id="send-status" style="display:none"></div>
+  </section>
+
+
+  <!-- ════════════════════════════════════════════════════
+       RECEIVE A FILE
+  ═════════════════════════════════════════════════════ -->
+  <section class="card" id="recv-section">
+    <h2 class="section-title">
+      <span class="icon">&#8601;</span> Receive a File
+    </h2>
+
+    <!-- Destination folder -->
+    <div class="field-group">
+      <label class="field-label" for="dest-folder">Destination Folder</label>
+      <input type="text" id="dest-folder" class="text-input" placeholder="Leave blank to use default received_files/" />
+      <span class="field-hint">Files will be saved here. A numbered suffix is added if a name already exists.</span>
+    </div>
+
+    <!-- Port -->
+    <div class="field-group">
+      <label class="field-label" for="listen-port">Listen Port</label>
+      <input type="number" id="listen-port" class="text-input" value="9001" min="1024" max="65535" />
+    </div>
+
+    <!-- Start / Stop buttons -->
+    <div class="btn-row">
+      <button class="btn-primary" id="btn-start-recv">Start Receiving</button>
+      <button class="btn-secondary" id="btn-stop-recv" disabled>Stop Receiving</button>
+    </div>
+
+    <!-- Listening indicator -->
+    <div class="listen-status" id="listen-status">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="listen-status-text">Not listening</span>
+    </div>
+
+    <!-- Incoming file details -->
+    <div class="incoming-info" id="incoming-info" style="display:none">
+      <div class="incoming-row">
+        <span class="incoming-label">File</span>
+        <span id="incoming-filename" class="incoming-value"></span>
+      </div>
+      <div class="incoming-row">
+        <span class="incoming-label">Size</span>
+        <span id="incoming-filesize" class="incoming-value"></span>
+      </div>
+      <div class="incoming-row">
+        <span class="incoming-label">From</span>
+        <span id="incoming-sender" class="incoming-value"></span>
+      </div>
+    </div>
+
+    <!-- Receive progress -->
+    <div class="progress-wrap" id="recv-progress-wrap" style="display:none">
+      <div class="progress-label">
+        <span id="recv-progress-text">Receiving…</span>
+        <span id="recv-progress-pct">0%</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="recv-progress-fill" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- Status message -->
+    <div class="status-msg" id="recv-status" style="display:none"></div>
+  </section>
+
+</main>
+
+<!-- ── Transfer History ─────────────────────────────────────────────────── -->
+<section class="history-section">
+  <div class="history-header">
+    <h2>Transfer History</h2>
+    <button class="btn-ghost" id="btn-clear-history">Clear</button>
+  </div>
+  <div id="history-table-wrap">
+    <p class="empty-msg" id="history-empty">No transfers yet.</p>
+    <table class="history-table" id="history-table" style="display:none">
+      <thead>
+        <tr>
+          <th>File Name</th>
+          <th>Size</th>
+          <th>Direction</th>
+          <th>Date &amp; Time</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="history-tbody"></tbody>
+    </table>
+  </div>
+</section>
+
+<script src="/static/script.js"></script>
+</body>
+</html>
